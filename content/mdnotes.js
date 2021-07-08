@@ -1,57 +1,38 @@
 /*globals Zotero, OS, require, Components, window */
 
-const mdnotesTemplate = `{{title}}
+const mdnotesTemplate = `
+\`\`\`ad-info
+title: Metadata
 
-![[%(metadataFileName)#Metadata]]
-
-Other files:
-{{mdnotesFileName}}
-{{metadataFileName}}
-
-##  Zotero links
-{{localLibrary}}
-{{cloudLibrary}}
-
-## Notes
-- `;
-
-const standaloneTemplate = `Related to: [[%(metadataFileName)]]
-
-## Notes
-- `;
-
-const zoteroNoteTemplate = `{{tags}}
-{{related}}
-{{mdnotesFileName}}
-
-{{title}}
-
-{{noteContent}}`;
-
-const zoteroMetadataTemplate = `{{title}}
-
-## Metadata
-
-{{itemType}}
-{{author}}
-{{proceedingsTitle}}
-{{date}}
-{{dateAdded}}
-{{url}}
+* title: {{title}}
+* citekey: {{citekey}}
+* authors: {{author}}
 {{DOI}}
-{{citekey}}
-{{collections}}
-{{related}}
-{{tags}}, #zotero, #literature-notes, #reference
-{{pdfAttachments}}
+* links:
+  {{url}}
+  {{localLibrary}}
+* tags: {{tags}}
+\`\`\`
 
+\`\`\`ad-abstract
 {{abstractNote}}
+\`\`\`
 
-##  Zotero links
-{{localLibrary}}
-{{cloudLibrary}}
+{{# if 0 }}
+### Everything
 
-{{notes}}`;
+<ul>
+{{#each this}}
+  <li>{{@key}}: {{this}}</li>
+{{/each}}
+</ul>
+{{/if}}
+`;
+
+const zoteroNoteTemplate = `## Annotations
+
+{{{noteContent}}}`;
+
 
 function getPref(pref_name) {
   return Zotero.Prefs.get(`extensions.mdnotes.${pref_name}`, true);
@@ -118,33 +99,15 @@ function getCiteKey(item) {
 }
 
 function getLocalZoteroLink(item) {
-  let linksString = "[Local library](zotero://select/items/";
+  let linksString = "zotero://select/items/";
   const library_id = item.libraryID ? item.libraryID : 0;
-  linksString += `${library_id}_${item.key})`;
+  linksString += `${library_id}_${item.key}`;
 
   return linksString;
 }
 
 function getCloudZoteroLink(item) {
-  return `[Cloud library](${Zotero.URI.getItemURI(item)})`;
-}
-
-function getDOI(item) {
-  let doi = item.getField("DOI");
-  if (doi) {
-    return `[${doi}](https://doi.org/${doi})`;
-  } else {
-    return doi;
-  }
-}
-
-function getURL(item) {
-  let url = item.getField("url");
-  if (url) {
-    return `[${url}](${url})`;
-  } else {
-    return url;
-  }
+  return Zotero.URI.getItemURI(item);
 }
 
 function getTags(item) {
@@ -227,13 +190,7 @@ function getItemMetadata(item) {
 
   for (let x of fields) {
     let field = Zotero.ItemFields.getName(x);
-    let content = item.getField(field, false, true);
-    if (field === "DOI") {
-      content = getDOI(item);
-    } else if (field === "url") {
-      content = getURL(item);
-    }
-    metadata[field] = content;
+    metadata[field] = item.getField(field, false, true);
   }
   metadata.itemType = typemap[zoteroType];
   metadata.citekey = getCiteKey(item);
@@ -311,11 +268,11 @@ function getZoteroAttachments(item) {
     if (attachment.attachmentContentType == "application/pdf") {
       let link;
       if (linkStylePref === "zotero") {
-        link = `[${attachment.getField("title")}](${getZoteroPDFLink(attachment)})`;
+        link = getZoteroPDFLink(attachment);
       } else if (linkStylePref === "wiki") {
         link = formatInternalLink(attachment.getField("title"), "wiki");
       } else {
-        link = `[${attachment.getField("title")}](${getPDFFileLink(attachment)})`;
+        link = getPDFFileLink(attachment);
       }
       linksArray.push(link);
     }
@@ -502,21 +459,13 @@ function getZMetadataFileName(item) {
  * @param {item} item A Zotero item
  */
 
-async function getMDNoteFileContents(item, standalone) {
+async function getMDNoteFileContents(item) {
   let metadata = getItemMetadata(item);
-  let template;
-  let fileName;
-  if (standalone) {
-    template = await readTemplate("Standalone Note Template");
-    fileName = getStandaloneFileName(item);
-  } else {
-    fileName = metadata.mdnotesFileName;
-    template = await readTemplate("Mdnotes Default Template");
-  }
+  let template = await readTemplate("Mdnotes Default Template");
+  let fileName = metadata.mdnotesFileName;
   let formattedPlaceholders = format_placeholders(metadata);
-  let content = remove_invalid_placeholders(
-    replace_placeholders(template, formattedPlaceholders)
-  );
+  let hTemplate = Handlebars.compile(template);
+  let content = hTemplate(formattedPlaceholders);
   content = replace_wildcards(content, metadata);
   return { content: content, name: fileName };
 }
@@ -525,10 +474,6 @@ function getDefaultTemplate(fileName) {
   switch (fileName) {
     case "Mdnotes Default Template":
       return mdnotesTemplate;
-    case "Standalone Note Template":
-      return standaloneTemplate;
-    case "Zotero Metadata Template":
-      return zoteroMetadataTemplate;
     case "Zotero Note Template":
       return zoteroNoteTemplate;
   }
@@ -577,166 +522,16 @@ function replace_wildcards(str, args) {
   return str.replace(/%\((\w+)\)/g, (match, name) => args[name]);
 }
 
-function replace_placeholders(str, args) {
-  return str.replace(/{{(\w+)}}/g, (match, name) =>
-    args[name] ? args[name] : "{{invalid}}"
-  );
-}
-
-function remove_invalid_placeholders(str) {
-  return str.replace(/{{invalid}}\n?\r?/g, (match, name) => "");
-}
-
-function skipItem(value) {
-  let skip = false;
-  // If we have an empty field and we DON'T want to include empty values, continue
-  // If the value is an empty string, we also skip it
-  if (value === "" || value === undefined) {
-    skip = true;
-  }
-
-  // If it's an array and is empty
-  if (typeof value === "object" && value.length === 0) {
-    skip = true;
-  }
-
-  return skip && !getPref("templates.include_empty_placeholders");
-}
-
-/**
- * @param {Object} placeholders An object that contains the item's fields as keys, and its contents as values
- * @return {string} The formatted string
- */
 function format_placeholders(placeholders) {
-  let formattedPlaceholders = {};
-  for (const [key, value] of Object.entries(placeholders)) {
-    if (skipItem(value)) {
-      continue;
-    }
-
-    // Replace a potential undefined with an empty string instead of undefined
-    let newValue = value ? value : "";
-    let formatted_label = capitalize_field_label(key);
-    let settings = getFormattingSettings(key);
-
-    // Exceptions that already come formatted as external links
-    if (
-      [
-        "pdfAttachments",
-        "url",
-        "DOI",
-        "cloudLibrary",
-        "localLibrary",
-        "noteContent",
-      ].includes(key)
-    ) {
-      settings.link_style = "no-links";
-    }
-
-    let formatted_content = format_field_content(newValue, settings);
-    let placeholder = settings.content
-      ? settings.content
-      : `{{bullet}} {{field_name}}: {{field_contents}}`;
-    let args = {
-      field_contents: formatted_content,
-      bullet: `${getPref("bullet")}`,
-      field_name: formatted_label,
-    };
-    formattedPlaceholders[key] = replace_placeholders(placeholder, args);
-  }
-
-  return formattedPlaceholders;
-}
-
-function capitalize_field_label(text) {
-  if (text === "url") return "URL";
-  if (text === "DOI") return text;
-  return Zotero.Utilities.capitalize(
-    text.replace(/([A-Z])/g, " $1"),
-    true
-  ).replace("Pdf", "PDF");
-}
-
-function format_field_content(fieldContent, settings) {
-  if (typeof fieldContent === "object") {
-    return format_array(fieldContent, settings);
-  }
-  return format_string(fieldContent, settings);
-}
-
-function change_case(text, textCase) {
-  switch (textCase) {
-    case "title":
-      return Zotero.Utilities.capitalizeTitle(text);
-    case "sentence":
-      return Zotero.Utilities.capitalize(text);
-    case "lower":
-      return text.toLowerCase();
-    case "upper":
-      return text.toUpperCase();
-    default:
-      return text;
-  }
-}
-
-function format_string(str, settings) {
-  let formattedString;
-  // First format links
-  formattedString = `${formatInternalLink(str, settings.link_style)}`;
-
-  let format = settings.field_contents
-    ? settings.field_contents
-    : "{{content}}";
-
-  if (settings.remove_spaces) {
-    formattedString = formattedString.replace(/\s+/g, "-");
-  }
-
-  if (settings.text_case) {
-    formattedString = change_case(formattedString, settings.text_case);
-  }
-
-  // Format the field
-  formattedString = replace_placeholders(format, {
-    content: `${formattedString}`,
-  });
-
-  return formattedString;
-}
-
-function camelToTitleCase(str) {
-  let new_str = str.replace(/_/g, " ");
-  return Zotero.Utilities.capitalizeTitle(
-    new_str.replace(/([A-Z])/g, " $1"),
-    true
-  );
-}
-
-function format_array(array, settings) {
-  let formattedArray = [];
-  for (let item of array) {
-    formattedArray.push(format_string(item, settings));
-  }
-
-  let list_separator = settings.list_separator ? settings.list_separator : ", ";
-
-  return formattedArray.join(list_separator);
-}
-
-function getFormattingSettings(field) {
-  let fieldPrefs = getPref("placeholder." + field);
-  let fieldSettings = fieldPrefs ? JSON.parse(fieldPrefs) : {};
-  return fieldSettings;
+  return placeholders;
 }
 
 async function getZoteroNoteFileContents(item) {
   let note = noteToMarkdown(item);
   let formattedPlaceholders = format_placeholders(note);
   let fileName = getZNoteFileName(item);
-  let template = await readTemplate("Zotero Note Template");
-  let fileContents = remove_invalid_placeholders(
-    replace_placeholders(template, formattedPlaceholders)
-  );
+  let template = Handlebars.compile(await readTemplate("Zotero Note Template"));
+  let fileContents = template(formattedPlaceholders);
   return { content: fileContents, name: fileName };
 }
 
@@ -825,48 +620,6 @@ Zotero.Mdnotes =
       );
     }
 
-    updateMenus() {
-      // Follow Zotfile's example:
-      // https://github.com/jlegewie/zotfile/blob/master/chrome/content/zotfile/ui.js#L190
-      let win = Services.wm.getMostRecentWindow("navigator:browser");
-      let menu = win.ZoteroPane.document.getElementById("id-mdnotes-menupopup");
-
-      // This is the order in which menuitems are added in overlay.xul
-      let items = {
-        mdexport: 0,
-        separator: 1,
-        single: 2,
-        batch: 3,
-        mdnotes: 4,
-        standalone: 5,
-      };
-
-      let disableItems = [];
-
-      if (getPref("file_conf") === "split") {
-        disableItems.push(items.single);
-      } else {
-        disableItems.push(items.batch);
-        disableItems.push(items.mdnotes);
-      }
-
-      if (!getPref("standalone_menu")) {
-        disableItems.push(items.standalone)
-      }
-
-      // Enable all items by default and make them visible
-      for (let i = 0; i < menu.childNodes.length; i++) {
-        menu.childNodes[i].setAttribute("disabled", false);
-        menu.childNodes[i].setAttribute("hidden", false);
-      }
-
-      // Hide and disable menus based on the single vs split files
-      for (let i in disableItems) {
-        menu.childNodes[disableItems[i]].setAttribute("disabled", true);
-        menu.childNodes[disableItems[i]].setAttribute("hidden", true);
-      }
-    }
-
     setPref(pref_name, value) {
       Zotero.Prefs.set(`extensions.mdnotes.${pref_name}`, value, true);
     }
@@ -885,71 +638,9 @@ Zotero.Mdnotes =
       }
     }
 
-    async createNoteFileMenu(standalone) {
-      var items = Zotero.getActiveZoteroPane()
-        .getSelectedItems()
-        .filter(
-          (item) =>
-            Zotero.ItemTypes.getName(item.itemTypeID) !== "attachment" &&
-            Zotero.ItemTypes.getName(item.itemTypeID) !== "note"
-        );
-      await Zotero.Schema.schemaUpdatePromise;
-
-      const FilePicker = require("zotero/filePicker").default;
-
-      const fp = new FilePicker();
-      var oldPath = getPref("directory")
-        ? getPref("directory")
-        : OS.Constants.Path.homeDir;
-
-      if (oldPath) {
-        fp.displayDirectory = oldPath;
-      }
-      for (const item of items) {
-        Zotero.debug("Creating markdown note...");
-        Zotero.debug("Standalone: " + standalone);
-
-        fp.init(window, "Save markdown note...", fp.modeSave);
-        fp.appendFilter("Markdown", "*.md");
-
-        let fileName;
-        if (standalone) {
-          fileName = getStandaloneFileName(item);
-        } else {
-          fileName = getMDNoteFileName(item);
-        }
-        fp.defaultString = `${fileName}.md`;
-
-        const rv = await fp.show();
-        if (rv == fp.returnOK || rv == fp.returnReplace) {
-          let outputFile = fp.file;
-          if (outputFile.split(".").pop().toLowerCase() != "md") {
-            outputFile += ".md";
-          }
-          const file = await getMDNoteFileContents(item, standalone);
-          Zotero.File.putContentsAsync(outputFile, file.content);
-
-          // Attach note
-          this.addLinkToMDNote(outputFile, item);
-          addObsidianLink(outputFile, item);
-        }
-      }
-    }
-
-    async getRegularItemContents(item) {
-      let metadata = getItemMetadata(item);
-      let template = await readTemplate("Zotero Metadata Template");
-      let formattedPlaceholders = format_placeholders(metadata);
-      let newContents = remove_invalid_placeholders(
-        replace_placeholders(template, formattedPlaceholders)
-      );
-      let fileName = getZMetadataFileName(item);
-      return { content: newContents, name: fileName };
-    }
-
     /**
-     * Return an object with all the exportable files from a top-level item. 
-     * Only used for batch export. 
+     * Return an object with all the exportable files from a top-level item.
+     * Only used for batch export.
      * @param {Item} item A Zotero item
      */
     async getFiles(item) {
@@ -959,12 +650,6 @@ Zotero.Mdnotes =
         name: mdnotesFile.name,
         content: mdnotesFile.content,
       });
-
-      // Only add the metadata file for multi-file exports
-      if (getPref("file_conf") === "split") {
-        let itemFile = await this.getRegularItemContents(item);
-        fileArray.push({ name: itemFile.name, content: itemFile.content });
-      }
 
       let noteIDs = item.getNotes();
       if (noteIDs) {
@@ -992,53 +677,6 @@ Zotero.Mdnotes =
 
       exportFile.content = content;
       return exportFile;
-    }
-
-    /**
-     * Export Zotero items (regular items and notes) to markdown
-     */
-    async exportToMarkdownMenu() {
-      var items = Zotero.getActiveZoteroPane()
-        .getSelectedItems()
-        .filter(
-          (item) => Zotero.ItemTypes.getName(item.itemTypeID) !== "attachment"
-        );
-      await Zotero.Schema.schemaUpdatePromise;
-
-      const FilePicker = require("zotero/filePicker").default;
-
-      const fp = new FilePicker();
-      var oldPath = getPref("directory")
-        ? getPref("directory")
-        : OS.Constants.Path.homeDir;
-
-      if (oldPath) {
-        fp.displayDirectory = oldPath;
-      }
-
-      fp.init(window, "Export to markdown...", fp.modeGetFolder);
-      const rv = await fp.show();
-
-      if (rv === fp.returnOK) {
-        for (const item of items) {
-          let file;
-          if (item && !item.isNote()) {
-            Zotero.debug("Exporting a regular Zotero item");
-            file = await this.getRegularItemContents(item);
-          } else if (item && item.isNote()) {
-            Zotero.debug("Exporting a Zotero note");
-            file = await getZoteroNoteFileContents(item);
-          } else {
-            continue;
-          }
-          let outputFile = getFilePath(fp.file, `${file.name}`);
-          Zotero.File.putContentsAsync(outputFile, file.content);
-
-          // Attach note
-          this.addLinkToMDNote(outputFile, item);
-          addObsidianLink(outputFile, item);
-        }
-      }
     }
 
     async batchExportMenu() {
