@@ -4,21 +4,18 @@ const mdnotesTemplate = `
 \`\`\`ad-info
 title: Metadata
 
-* title: {{title}}
-* citekey: {{citekey}}
-* authors: {{author}}
-{{DOI}}
-* links:
-  {{url}}
-  {{localLibrary}}
-* tags: {{tags}}
+* Title: {{title}}
+{{#if citekey ~}}* Citekey: {{citekey}}{{/if}}
+{{#if author ~}}* Authors: {{#each author}}[[@{{this}}]]{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+{{#if DOI ~}}* DOI: [{{DOI}}](https://doi.org/{{DOI}}){{/if}}
+{{#if (or url localLibrary) ~}}* Links: {{#if url}}[source]({{url}}) {{/if}}{{#if localLibrary}}[zotero]({{localLibrary}}) {{/if}}{{/if}}
+{{#if tags ~}}* Tags: {{#each tags}}#{{this}}{{#unless @last}} {{/unless}}{{/each}}{{/if}}
 \`\`\`
 
 \`\`\`ad-abstract
 {{abstractNote}}
 \`\`\`
-
-{{# if 0 }}
+{{# if 0 ~}}
 ### Everything
 
 <ul>
@@ -26,8 +23,7 @@ title: Metadata
   <li>{{@key}}: {{this}}</li>
 {{/each}}
 </ul>
-{{/if}}
-`;
+{{/if}}`;
 
 const zoteroNoteTemplate = `## Annotations
 
@@ -219,17 +215,8 @@ function formatLists(list, bullet) {
   }
 }
 
-function formatInternalLink(content, linkStyle) {
-  linkStyle =
-    typeof linkStyle !== "undefined" ? linkStyle : getPref("link_style");
-
-  if (linkStyle === "wiki") {
-    return `[[${content}]]`;
-  } else if (linkStyle === "markdown") {
-    return `[${content}](${lowerCaseDashTitle(content)})`;
-  } else {
-    return `${content}`;
-  }
+function formatInternalLink(content) {
+  return `[[${content}]]`;
 }
 
 function lowerCaseDashTitle(content) {
@@ -270,7 +257,7 @@ function getZoteroAttachments(item) {
       if (linkStylePref === "zotero") {
         link = getZoteroPDFLink(attachment);
       } else if (linkStylePref === "wiki") {
-        link = formatInternalLink(attachment.getField("title"), "wiki");
+        link = formatInternalLink(attachment.getField("title"));
       } else {
         link = getPDFFileLink(attachment);
       }
@@ -382,18 +369,7 @@ function noteToMarkdown(item) {
  * Get an item's base file name from setting's preferences
  */
 function getFileName(item) {
-  let citekeyTitle = getPref("citekey_title");
-
-  if (citekeyTitle) {
-    return getCiteKey(item);
-  } else {
-    // TODO add checks for Windows special characters
-    if (getPref("link_style") === "wiki") {
-      return item.getField("title");
-    } else {
-      return lowerCaseDashTitle(item.getField("title"));
-    }
-  }
+  return getCiteKey(item);
 }
 
 /**
@@ -438,10 +414,6 @@ function getMDNoteFileName(item) {
   return getNCFileName(item, "mdnotes.hub");
 }
 
-function getStandaloneFileName(item) {
-  return getNCFileName(item, "mdnotes.standalone");
-}
-
 /**
  * Return the file name for a Zotero note based on the naming convention
  * @param {object} item A Zotero item that isNote()
@@ -463,9 +435,8 @@ async function getMDNoteFileContents(item) {
   let metadata = getItemMetadata(item);
   let template = await readTemplate("Mdnotes Default Template");
   let fileName = metadata.mdnotesFileName;
-  let formattedPlaceholders = format_placeholders(metadata);
   let hTemplate = Handlebars.compile(template);
-  let content = hTemplate(formattedPlaceholders);
+  let content = hTemplate(metadata);
   content = replace_wildcards(content, metadata);
   return { content: content, name: fileName };
 }
@@ -522,16 +493,11 @@ function replace_wildcards(str, args) {
   return str.replace(/%\((\w+)\)/g, (match, name) => args[name]);
 }
 
-function format_placeholders(placeholders) {
-  return placeholders;
-}
-
 async function getZoteroNoteFileContents(item) {
   let note = noteToMarkdown(item);
-  let formattedPlaceholders = format_placeholders(note);
   let fileName = getZNoteFileName(item);
   let template = Handlebars.compile(await readTemplate("Zotero Note Template"));
-  let fileContents = template(formattedPlaceholders);
+  let fileContents = template(note);
   return { content: fileContents, name: fileName };
 }
 
@@ -595,11 +561,26 @@ async function addObsidianLink(outputFile, item) {
     await Zotero.Attachments.linkFromURL({
       url: obsidianURI,
       contentType: "x-scheme-handler/obsidian",
-      title: fileName,
+      title: fileName + ".obsidian",
       parentItemID: parentItem.id,
     });
   }
 }
+
+Handlebars.registerHelper({
+  eq: (v1, v2) => v1 === v2,
+  ne: (v1, v2) => v1 !== v2,
+  lt: (v1, v2) => v1 < v2,
+  gt: (v1, v2) => v1 > v2,
+  lte: (v1, v2) => v1 <= v2,
+  gte: (v1, v2) => v1 >= v2,
+  and() {
+    return Array.prototype.every.call(arguments, Boolean);
+  },
+  or() {
+    return Array.prototype.slice.call(arguments, 0, -1).some(Boolean);
+  }
+});
 
 Zotero.Mdnotes =
   Zotero.Mdnotes ||
@@ -705,35 +686,13 @@ Zotero.Mdnotes =
 
       if (rv === fp.returnOK) {
         for (const item of items) {
-          let outputFile;
-          if (getPref("file_conf") === "split") {
-            const files = await this.getFiles(item);
-            var noteFileName = getMDNoteFileName(item);
-            for (let exportFile of files) {
-              outputFile = getFilePath(fp.file, exportFile.name);
-              var fileExists = await OS.File.exists(outputFile);
+          let exportFile = await this.getSingleFileExport(item);
+          let outputFile = getFilePath(fp.file, exportFile.name);
+          Zotero.File.putContentsAsync(outputFile, exportFile.content);
 
-              if (
-                exportFile.name === `${noteFileName}` &&
-                (fileExists || !getPref("create_notes_file"))
-              ) {
-                continue;
-              }
-              Zotero.File.putContentsAsync(outputFile, exportFile.content);
-
-              // Attach new notes
-              this.addLinkToMDNote(outputFile, item);
-              addObsidianLink(outputFile, item);
-            }
-          } else {
-            let exportFile = await this.getSingleFileExport(item);
-            outputFile = getFilePath(fp.file, exportFile.name);
-            Zotero.File.putContentsAsync(outputFile, exportFile.content);
-
-            // Attach new notes
-            this.addLinkToMDNote(outputFile, item);
-            addObsidianLink(outputFile, item);
-          }
+          // Attach new notes
+          this.addLinkToMDNote(outputFile, item);
+          addObsidianLink(outputFile, item);
         }
       }
     }

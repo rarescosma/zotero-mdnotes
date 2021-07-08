@@ -8,27 +8,22 @@
   <prefpane label="&mdnotes-prefpane;" id="mdnotes-prefpane">
     <preferences>
       <preference id="pref-mdnotes-directory" name="extensions.mdnotes.directory" type="string" />
-      <preference id="pref-mdnotes-citekey-title" name="extensions.mdnotes.citekey_title" type="bool" />
-      <preference id="pref-mdnotes-link-style" name="extensions.mdnotes.link_style" type="string" />
-
-
       <preference id="pref-mdnotes-templates-directory" name="extensions.mdnotes.templates.directory" type="string" />
-      <preference id="pref-mdnotes-templates-empty-placeholders" name="extensions.mdnotes.templates.include_empty_placeholders" type="bool" />
 
-      <preference id="pref-mdnotes-file-conf" name="extensions.mdnotes.file_conf" type="string" />
-      <preference id="pref-mdnotes-standalone-menu" name="extensions.mdnotes.standalone_menu" type="bool" />
       <preference id="pref-mdnotes-files-zotero-metadata-prefix" name="extensions.mdnotes.files.zotero.metadata.prefix" type="string" />
       <preference id="pref-mdnotes-files-zotero-metadata-suffix" name="extensions.mdnotes.files.zotero.metadata.suffix" type="string" />
       <preference id="pref-mdnotes-files-zotero-note-prefix" name="extensions.mdnotes.files.zotero.note.prefix" type="string" />
       <preference id="pref-mdnotes-files-zotero-note-suffix" name="extensions.mdnotes.files.zotero.note.suffix" type="string" />
       <preference id="pref-mdnotes-files-mdnotes-hub-prefix" name="extensions.mdnotes.files.mdnotes.hub.prefix" type="string" />
       <preference id="pref-mdnotes-files-mdnotes-hub-suffix" name="extensions.mdnotes.files.mdnotes.hub.suffix" type="string" />
-      <preference id="pref-mdnotes-files-mdnotes-standalone-prefix" name="extensions.mdnotes.files.mdnotes.standalone.prefix" type="string" />
-      <preference id="pref-mdnotes-files-mdnotes-standalone-suffix" name="extensions.mdnotes.files.mdnotes.standalone.suffix" type="string" />
 
       <!-- Notes file -->
       <preference id="pref-mdnotes-create-note" name="extensions.mdnotes.create_notes_file" type="bool" />
       <preference id="pref-mdnotes-attach-to-zotero" name="extensions.mdnotes.attach_to_zotero" type="bool" />
+
+      <!-- Obsidian attachment -->
+      <preference id="pref-mdnotes-obsidian-attach-obsidian-uri" name="extensions.mdnotes.obsidian.attach_obsidian_uri" type="bool" />
+      <preference id="pref-mdnotes-obsidian-vault" name="extensions.mdnotes.obsidian.vault" type="string" />
     </preferences>
 
     <tabbox id="mdnotes-pref-tabs" selectedIndex="0">
@@ -40,37 +35,6 @@
         <tabpanel>
           <!-- General export settings -->
           <vbox>
-            <checkbox id="id-mdnotes-citekey-title" preference="pref-mdnotes-citekey-title" label="&citekey-title;" />
-            <checkbox id="id-mdnotes-standalone-menu" preference="pref-mdnotes-standalone-menu" label="&pref-standalone-menu;" />
-            <separator />
-            <radiogroup id="id-mdnotes-file-group" preference="pref-mdnotes-file-conf">
-              <caption label="&mdnotes-file-number-label;" />
-              <description style="font-size: 10px"> Exporting notes as a single file or in multiple files</description>
-              <hbox>
-                <radio id="single-file" label="Single file" value="single" />
-                <radio id="split-files" label="Split files" selected="true" value="split" />
-              </hbox>
-            </radiogroup>
-            <separator />
-            <radiogroup id="id-mdnotes-link-group" preference="pref-mdnotes-link-style">
-              <caption label="&mdnotes-links-label;" />
-              <description style="font-size: 10px">
-                The link format is applied to all the metadata fields, except the cite key.
-              </description>
-              <hbox>
-                <radio id="no-links" label="No links" value="none" />
-                <radio id="wiki" label="[[Wiki style]]" selected="true" value="wiki" />
-                <radio id="markdown" label="[Markdown style](markdown-style)" value="markdown" />
-              </hbox>
-              <description style="font-size: 10px">
-                No links will output metadata as plain text
-              </description>
-
-              <description style="font-size: 10px">
-                Markdown links will change how files are renamed and substitute spaces with dashes.
-              </description>
-            </radiogroup>
-            <separator />
             <hbox align="center">
               <label id="id-mdnotes-vault-path-label" value="&note-directory-label;" control="id-mdnotes-vault-path" />
               <textbox id="id-mdnotes-vault-path" preference="pref-mdnotes-directory" flex="1" />
@@ -90,9 +54,14 @@
             <description style="font-size: 10px">
               Path where templates are stored. Templates should be stored in the root folder; subfolders are not supported.
             </description>
-
+            <separator />
+            <checkbox id="id-mdnotes-obsidian-attach-obsidian-uri" preference="pref-mdnotes-obsidian-attach-obsidian-uri" label="Create Obsidian attachment link" />
+            <separator />
+            <hbox align="center">
+              <label id="id-mdnotes-obsidian-vault-label" value="Vault name" control="id-mdnotes-obsidian-vault" flex="1" />
+              <textbox id="id-mdnotes-obsidian-vault" preference="pref-mdnotes-obsidian-vault" flex="1" />
+            </hbox>
           </vbox>
-
         </tabpanel>
         <tabpanel>
           <vbox>
@@ -107,18 +76,6 @@
               </hbox>
               <description style="font-size: 10px">
                 What prefix and suffix to add to the mdnotes file name
-              </description>
-            </groupbox>
-            <groupbox>
-              <caption label="&standalone-files;"/>
-              <hbox align="center">
-                <label id="id-mdnotes-standalone-prefix-label" value="&prefix;" control="id-mdnotes-standalone-prefix" />
-                <textbox id="id-mdnotes-standalone-prefix" preference="pref-mdnotes-files-mdnotes-standalone-prefix" flex="1" />
-                <label id="id-mdnotes-standalone-suffix-label" value="&suffix;" control="id-mdnotes-standalone-suffix" />
-                <textbox id="id-mdnotes-standalone-suffix" preference="pref-mdnotes-files-mdnotes-standalone-suffix" flex="1" />
-              </hbox>
-              <description style="font-size: 10px">
-                What prefix and suffix to add to standalone notes
               </description>
             </groupbox>
             <!-- Zotero items -->
@@ -152,6 +109,5 @@
     </tabbox>
 
     <script src="chrome://zotero/content/include.js" />
-    <!-- <script type="application/x-javascript" src="chrome://mdnotes/content/options.js"/> -->
   </prefpane>
 </prefwindow>
